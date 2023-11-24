@@ -1,6 +1,8 @@
-import enum
-from typing import Sequence, Self
+"""A simple and fast Sudoku solver."""
 
+import enum
+import sys
+from typing import Sequence, Self
 
 R_TO_NUM = {0: 0, 1: 1, 2: 2, 4: 3, 8: 4, 16: 5, 32: 6, 64: 7, 128: 8, 256: 9}
 FULL_MASK = 0x1FF
@@ -42,9 +44,9 @@ class NumSlot():
 class SlotGroup():
   """Representation of a group of slots."""
 
-  def __init__(self, s1: NumSlot, s2: NumSlot, s3: NumSlot,
-               s4: NumSlot, s5: NumSlot, s6: NumSlot,
-               s7: NumSlot, s8: NumSlot, s9: NumSlot) -> None:
+  def __init__(self, s1: NumSlot, s2: NumSlot, s3: NumSlot, s4: NumSlot,
+               s5: NumSlot, s6: NumSlot, s7: NumSlot, s8: NumSlot,
+               s9: NumSlot) -> None:
     self.s1: NumSlot = s1
     self.s2: NumSlot = s2
     self.s3: NumSlot = s3
@@ -57,9 +59,8 @@ class SlotGroup():
 
   @property
   def combine(self) -> int:
-    return (self.s1.r | self.s2.r | self.s3.r |
-            self.s4.r | self.s5.r | self.s6.r |
-            self.s7.r | self.s8.r | self.s9.r)
+    return (self.s1.r | self.s2.r | self.s3.r | self.s4.r | self.s5.r |
+            self.s6.r | self.s7.r | self.s8.r | self.s9.r)
 
   @property
   def vacancy(self) -> int:
@@ -67,16 +68,16 @@ class SlotGroup():
 
   @property
   def is_legal(self) -> bool:
-    return self.combine.bit_count() == (
-      self.s1.is_fill + self.s2.is_fill + self.s3.is_fill +
-      self.s4.is_fill + self.s5.is_fill + self.s6.is_fill +
-      self.s7.is_fill + self.s8.is_fill + self.s9.is_fill
-    )
+    return self.combine.bit_count() == (self.s1.is_fill + self.s2.is_fill +
+                                        self.s3.is_fill + self.s4.is_fill +
+                                        self.s5.is_fill + self.s6.is_fill +
+                                        self.s7.is_fill + self.s8.is_fill +
+                                        self.s9.is_fill)
 
   def __str__(self) -> str:
-    return (f"{self.s1}{self.s2}{self.s3} "
-            f"{self.s4}{self.s5}{self.s6} "
-            f"{self.s7}{self.s8}{self.s9}")
+    return (f'{self.s1}{self.s2}{self.s3} '
+            f'{self.s4}{self.s5}{self.s6} '
+            f'{self.s7}{self.s8}{self.s9}')
 
   def __repr__(self) -> str:
     return str(self)
@@ -87,16 +88,15 @@ class SudokuBoard():
 
   def __init__(self) -> None:
     """Books a new RAM space for holding the Sudoku puzzle."""
-    self.board = [[NumSlot() for _ in range(9)] for __ in range(9)]
+    self.board = [[NumSlot() for _ in range(9)] for _ in range(9)]
     self.row = [SlotGroup(*self.board[i]) for i in range(9)]
     self.column = [SlotGroup(*[r[i] for r in self.board]) for i in range(9)]
-    self.block: Sequence[SlotGroup] = []
+    self.block: list[SlotGroup] = []
     for i in [0, 3, 6]:
       for r in [0, 3, 6]:
         self.block.append(
-          SlotGroup(*self.board[i][r:r+3],
-                    *self.board[i + 1][r:r+3],
-                    *self.board[i + 2][r:r+3]))
+            SlotGroup(*self.board[i][r:r + 3], *self.board[i + 1][r:r + 3],
+                      *self.board[i + 2][r:r + 3]))
     self.empty_slots: list[tuple[int, int]] = []
 
   def set_board_num(self, board: Sequence[Sequence[int]]) -> None:
@@ -130,14 +130,13 @@ class SudokuBoard():
 
   def slot_candidates(self, row: int, column: int) -> int:
     """Returns a integer that represents all possible candidates."""
-    return (self.row[row].vacancy &
-            self.column[column].vacancy &
+    return (self.row[row].vacancy & self.column[column].vacancy &
             self.block[((row // 3) * 3) + (column // 3)].vacancy)
 
   @property
   def is_legal(self) -> bool:
     for gp in (self.row + self.column + self.block):
-      if not gp.islegal:
+      if not gp.is_legal:
         return False
     return True
 
@@ -152,7 +151,7 @@ class SudokuBoard():
     """Fills all trivial empty slots."""
     is_updated = SolverResults.NO_UPDATE
     self.empty_slots.sort(
-      key=lambda slot: self.slot_candidates(*slot).bit_count(), reverse=True)
+        key=lambda slot: self.slot_candidates(*slot).bit_count(), reverse=True)
     for _ in range(len(self.empty_slots)):
       r, c = self.empty_slots.pop(-1)
       candidate = self.slot_candidates(r, c)
@@ -169,9 +168,16 @@ class SudokuBoard():
 
   def __str__(self) -> str:
     row_list = [
-      str(self.row[0]), str(self.row[1]), str(self.row[2]), '',
-      str(self.row[3]), str(self.row[4]), str(self.row[5]), '',
-      str(self.row[6]), str(self.row[7]), str(self.row[8])]
+        str(self.row[0]),
+        str(self.row[1]),
+        str(self.row[2]), '',
+        str(self.row[3]),
+        str(self.row[4]),
+        str(self.row[5]), '',
+        str(self.row[6]),
+        str(self.row[7]),
+        str(self.row[8])
+    ]
     return '\n'.join(row_list)
 
   def __repr__(self) -> str:
@@ -189,16 +195,18 @@ def gen_board(user_input: str) -> SudokuBoard:
     try:
       in_num = int(char)
       board.append(in_num)
-    except ValueError:
-      raise ValueError('Invalid character found.')
+    except ValueError as e:
+      raise ValueError('Invalid character found.') from e
   sudoku_map = SudokuBoard()
-  sudoku_map.set_board_num([board[i * 9: i * 9 + 9] for i in range(9)])
+  sudoku_map.set_board_num([board[i * 9:i * 9 + 9] for i in range(9)])
   if not sudoku_map.is_legal:
     raise ValueError('Illegal Sudoku configuration.')
   return sudoku_map
 
 
 def solver(sudoku: SudokuBoard, guess_level: int = 0) -> SolverResults:
+  """Solves Sudoku puzzle recursively."""
+
   # Do simple filling.
   fill_result = SolverResults.UPDATE
   slots_count = len(sudoku.empty_slots)
@@ -233,26 +241,14 @@ def solver(sudoku: SudokuBoard, guess_level: int = 0) -> SolverResults:
   return fill_result
 
 
-
-b = gen_board(
-  """
-800 000 000
-003 600 000
-070 090 200
-
-050 007 000
-000 045 700
-000 100 030
-
-001 000 068
-008 500 010
-090 000 400
-  """
-)
-print('Your input puzzle is:')
-print(b)
-print(f'Solver says: {solver(b).name}')
-print('Final state:')
-print(b)
-print('Checker says:',
-      'Answer is leagal' if b.is_legal else 'Answer is wrong.')
+if __name__ == '__main__':
+  if len(sys.argv) <= 1:
+    raise ValueError('One needs to specify a puzzle.')
+  b = gen_board(sys.argv[1])
+  print('Your input puzzle is:')
+  print(b)
+  print(f'Solver says: {solver(b).name}')
+  print('Final state:')
+  print(b)
+  print('Checker says:',
+        'Answer is leagal' if b.is_legal else 'Answer is wrong.')
