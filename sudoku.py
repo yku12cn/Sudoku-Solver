@@ -16,7 +16,7 @@ class SolverResults(enum.Enum):
   ALL_DONE = 3
 
 
-class NumSlot():
+class Slot():
   """Representation of a slot in sudoku."""
 
   def __init__(self, number: int = 0) -> None:
@@ -24,15 +24,15 @@ class NumSlot():
 
   def set(self, number: int):
     """Fills a number to the slot."""
-    self.r = 1 << (number - 1) if number else 0
+    self.raw = 1 << (number - 1) if number else 0
 
   @property
   def is_fill(self) -> int:
     """Checks if the slot is filled."""
-    return int(self.r != 0)
+    return int(self.raw != 0)
 
   def __int__(self) -> int:
-    return R_TO_NUM[self.r]
+    return R_TO_NUM[self.raw]
 
   def __str__(self) -> str:
     return str(int(self))
@@ -44,27 +44,22 @@ class NumSlot():
 class SlotGroup():
   """Representation of a group of slots."""
 
-  def __init__(self, s1: NumSlot, s2: NumSlot, s3: NumSlot, s4: NumSlot,
-               s5: NumSlot, s6: NumSlot, s7: NumSlot, s8: NumSlot,
-               s9: NumSlot) -> None:
-    self.s1: NumSlot = s1
-    self.s2: NumSlot = s2
-    self.s3: NumSlot = s3
-    self.s4: NumSlot = s4
-    self.s5: NumSlot = s5
-    self.s6: NumSlot = s6
-    self.s7: NumSlot = s7
-    self.s8: NumSlot = s8
-    self.s9: NumSlot = s9
+  def __init__(self, s1: Slot, s2: Slot, s3: Slot, s4: Slot, s5: Slot, s6: Slot,
+               s7: Slot, s8: Slot, s9: Slot) -> None:
+    self.s1: Slot = s1
+    self.s2: Slot = s2
+    self.s3: Slot = s3
+    self.s4: Slot = s4
+    self.s5: Slot = s5
+    self.s6: Slot = s6
+    self.s7: Slot = s7
+    self.s8: Slot = s8
+    self.s9: Slot = s9
 
   @property
   def combine(self) -> int:
-    return (self.s1.r | self.s2.r | self.s3.r | self.s4.r | self.s5.r |
-            self.s6.r | self.s7.r | self.s8.r | self.s9.r)
-
-  @property
-  def vacancy(self) -> int:
-    return FULL_MASK - self.combine
+    return (self.s1.raw | self.s2.raw | self.s3.raw | self.s4.raw |
+            self.s5.raw | self.s6.raw | self.s7.raw | self.s8.raw | self.s9.raw)
 
   @property
   def is_legal(self) -> bool:
@@ -83,12 +78,37 @@ class SlotGroup():
     return str(self)
 
 
+class SlotCandidates():
+  """Representation of all possible choices of a given slot."""
+
+  def __init__(self, gp1: SlotGroup, gp2: SlotGroup, gp3: SlotGroup) -> None:
+    self.raw = FULL_MASK - (gp1.combine | gp2.combine | gp3.combine)
+    self._ind = 0
+
+  def __len__(self) -> int:
+    return self.raw.bit_count()
+
+  def __iter__(self) -> Self:
+    self._ind = 0
+    return self
+
+  def __next__(self) -> int:
+    if self._ind > 8:
+      raise StopIteration
+    mask = 1 << self._ind
+    self._ind += 1
+    if mask & self.raw:
+      return mask
+    else:
+      return self.__next__()
+
+
 class SudokuBoard():
   """Representation of one Sudoku board."""
 
   def __init__(self) -> None:
     """Books a new RAM space for holding the Sudoku puzzle."""
-    self.board = [[NumSlot() for _ in range(9)] for _ in range(9)]
+    self.board = [[Slot() for _ in range(9)] for _ in range(9)]
     self.row = [SlotGroup(*self.board[i]) for i in range(9)]
     self.column = [SlotGroup(*[r[i] for r in self.board]) for i in range(9)]
     self.block: list[SlotGroup] = []
@@ -110,28 +130,27 @@ class SudokuBoard():
 
   def sync_to(self, ref: Self) -> None:
     """Syncs this board to another SudokuBoard."""
-    self.empty_slots = []
-    for r, (rowslot, row) in enumerate(zip(self.board, ref.board)):
-      for c, (slot, num) in enumerate(zip(rowslot, row)):
-        if num == 0:
-          self.empty_slots.append((r, c))
-        slot.r = num.r
+    self.board = ref.board
+    self.row = ref.row
+    self.column = ref.column
+    self.block = ref.block
+    self.empty_slots = ref.empty_slots
 
   def clone(self) -> Self:
     """Generates a clone of this board."""
     new_board = SudokuBoard()
     for rowslot, row in zip(new_board.board, self.board):
       for slot, num in zip(rowslot, row):
-        slot.r = num.r
+        slot.raw = num.raw
     new_board.empty_slots = []
     for r, c in self.empty_slots:
       new_board.empty_slots.append((r, c))
     return new_board
 
-  def slot_candidates(self, row: int, column: int) -> int:
+  def slot_candidates(self, row: int, column: int) -> SlotCandidates:
     """Returns a integer that represents all possible candidates."""
-    return (self.row[row].vacancy & self.column[column].vacancy &
-            self.block[((row // 3) * 3) + (column // 3)].vacancy)
+    return SlotCandidates(self.row[row], self.column[column],
+                          self.block[((row // 3) * 3) + (column // 3)])
 
   @property
   def is_legal(self) -> bool:
@@ -150,18 +169,18 @@ class SudokuBoard():
   def simple_fill(self) -> SolverResults:
     """Fills all trivial empty slots."""
     is_updated = SolverResults.NO_UPDATE
-    self.empty_slots.sort(
-        key=lambda slot: self.slot_candidates(*slot).bit_count(), reverse=True)
+    self.empty_slots.sort(key=lambda slot: len(self.slot_candidates(*slot)),
+                          reverse=True)
     for _ in range(len(self.empty_slots)):
       r, c = self.empty_slots.pop(-1)
       candidate = self.slot_candidates(r, c)
-      candidate_count = candidate.bit_count()
+      candidate_count = len(candidate)
       if candidate_count > 1:
         self.empty_slots.append((r, c))
         break
       elif candidate_count == 1:
         is_updated = SolverResults.UPDATE
-        self.board[r][c].r = candidate
+        self.board[r][c].raw = candidate.raw
       elif candidate_count == 0:
         return SolverResults.CONFLICT
     return is_updated
@@ -225,19 +244,17 @@ def solver(sudoku: SudokuBoard, guess_level: int = 0) -> SolverResults:
 
   # When simple fill can't make any progress.
   r, c = sudoku.empty_slots.pop(-1)
-  candidates = sudoku.slot_candidates(r, c)
-  for i in range(9):
-    mask = 1 << i
-    if mask & candidates:
-      sudoku_guess = sudoku.clone()
-      sudoku_guess.board[r][c].r = mask
-      print(f'Guess level[{guess_level + 1}]: '
-            f'Trying {sudoku_guess.board[r][c]} at ({r}, {c}), '
-            f'{len(sudoku_guess.empty_slots)} empty slots left.')
-      fill_result = solver(sudoku_guess, guess_level + 1)
-      if fill_result == SolverResults.ALL_DONE:
-        sudoku.sync_to(sudoku_guess)
-        return SolverResults.ALL_DONE
+  candidates_pool = sudoku.slot_candidates(r, c)
+  for candidate in candidates_pool:
+    sudoku_guess = sudoku.clone()
+    sudoku_guess.board[r][c].raw = candidate
+    print(f'Guess level[{guess_level + 1}]: '
+          f'Trying {sudoku_guess.board[r][c]} at ({r}, {c}), '
+          f'{len(sudoku_guess.empty_slots)} empty slots left.')
+    fill_result = solver(sudoku_guess, guess_level + 1)
+    if fill_result == SolverResults.ALL_DONE:
+      sudoku.sync_to(sudoku_guess)
+      return SolverResults.ALL_DONE
   return fill_result
 
 
