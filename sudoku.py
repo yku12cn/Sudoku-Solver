@@ -3,6 +3,7 @@
 import enum
 import sys
 from typing import Sequence, Self
+from solver_tracker import SolverTracker
 
 R_TO_NUM = {0: 0, 1: 1, 2: 2, 4: 3, 8: 4, 16: 5, 32: 6, 64: 7, 128: 8, 256: 9}
 FULL_MASK = 0x1FF
@@ -223,21 +224,20 @@ def gen_board(user_input: str) -> SudokuBoard:
   return sudoku_map
 
 
-def solver(sudoku: SudokuBoard, guess_level: int = 0) -> SolverResults:
+def solver(sudoku: SudokuBoard,
+           tracker: SolverTracker,
+           guess_level: int = 0) -> SolverResults:
   """Solves Sudoku puzzle recursively."""
 
   # Do simple filling.
   fill_result = SolverResults.UPDATE
-  slots_count = len(sudoku.empty_slots)
   while fill_result == SolverResults.UPDATE:
     fill_result = sudoku.simple_fill()
 
   if fill_result == SolverResults.CONFLICT:
     return fill_result
 
-  slots_count = slots_count - len(sudoku.empty_slots)
-  if slots_count:
-    print(f'Simple fill solves {slots_count} slots.')
+  tracker.log_simple_fill(len(sudoku.empty_slots))
 
   if sudoku.is_done:
     return SolverResults.ALL_DONE
@@ -248,10 +248,9 @@ def solver(sudoku: SudokuBoard, guess_level: int = 0) -> SolverResults:
   for candidate in candidates_pool:
     sudoku_guess = sudoku.clone()
     sudoku_guess.board[r][c].raw = candidate
-    print(f'Guess level[{guess_level + 1}]: '
-          f'Trying {sudoku_guess.board[r][c]} at ({r}, {c}), '
-          f'{len(sudoku_guess.empty_slots)} empty slots left.')
-    fill_result = solver(sudoku_guess, guess_level + 1)
+    tracker.log_guess(len(sudoku_guess.empty_slots), guess_level + 1,
+                      int(sudoku_guess.board[r][c]), (r, c))
+    fill_result = solver(sudoku_guess, tracker, guess_level + 1)
     if fill_result == SolverResults.ALL_DONE:
       sudoku.sync_to(sudoku_guess)
       return SolverResults.ALL_DONE
@@ -262,10 +261,13 @@ if __name__ == '__main__':
   if len(sys.argv) <= 1:
     raise ValueError('One needs to specify a puzzle.')
   b = gen_board(sys.argv[1])
+  b_t = SolverTracker(init_slots=len(b.empty_slots), mute=False)
   print('Your input puzzle is:')
   print(b)
-  print(f'Solver says: {solver(b).name}')
+  print(f'Solver says: {solver(b, b_t).name}')
   print('Final state:')
   print(b)
   print('Checker says:',
-        'Answer is leagal' if b.is_legal else 'Answer is wrong.')
+        'Answer is leagal.' if b.is_legal else 'Answer is wrong.')
+  print(b_t.total_steps, 'steps in total.')
+  print(b_t.ascii_plot(17))
