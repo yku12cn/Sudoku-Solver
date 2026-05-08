@@ -137,7 +137,7 @@ class SudokuBoard():
     self.block = ref.block
     self.empty_slots = ref.empty_slots
 
-  def clone(self) -> Self:
+  def clone(self) -> 'SudokuBoard':
     """Generates a clone of this board."""
     new_board = SudokuBoard()
     for rowslot, row in zip(new_board.board, self.board):
